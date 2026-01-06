@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -764,13 +765,17 @@ func inManagedFields(cm *corev1.ConfigMap) bool {
 
 // isManaged checks if the additional alertmanager config is managed by ACM
 func isManaged(amc cmomanifests.AdditionalAlertmanagerConfig, hubInfo *operatorconfig.HubInfo) bool {
-	if hubInfo != nil && amc.TLSConfig.CA != nil && amc.TLSConfig.CA.LocalObjectReference.Name == hubAmRouterCASecretName+"-"+hubInfo.HubClusterDomain {
-		return true
-	} else if hubInfo == nil && amc.TLSConfig.CA != nil && strings.Contains(amc.TLSConfig.CA.LocalObjectReference.Name, hubAmRouterCASecretName) {
-		//This is only for the CMO cleanup script to clean up old configs
-		return true
+	matchSecret := amc.TLSConfig.CA != nil && strings.HasPrefix(amc.TLSConfig.CA.LocalObjectReference.Name, hubAmRouterCASecretName)
+	if hubInfo == nil || hubInfo.AlertmanagerEndpoint == "" {
+		return matchSecret
 	}
-	return false
+
+	u, err := url.Parse(hubInfo.AlertmanagerEndpoint)
+	if err != nil {
+		return matchSecret
+	}
+
+	return matchSecret && slices.Contains(amc.StaticConfigs, u.Host)
 }
 
 // hasClusterMonitoringConfigData checks if the configmap has the required key and logs if not

@@ -1142,3 +1142,71 @@ enableUserWorkload: true
 		t.Fatalf("UWL namespace should still exist: %v", err)
 	}
 }
+
+func TestIsManaged(t *testing.T) {
+	hubInfo := &operatorconfig.HubInfo{
+		AlertmanagerEndpoint: "https://alertmanager-host.com",
+		HubClusterDomain:     "test-hub",
+	}
+
+	tests := []struct {
+		name     string
+		amc      cmomanifests.AdditionalAlertmanagerConfig
+		expected bool
+	}{
+		{
+			name: "Managed by host and legacy prefix",
+			amc: cmomanifests.AdditionalAlertmanagerConfig{
+				StaticConfigs: []string{"alertmanager-host.com"},
+				TLSConfig: cmomanifests.TLSConfig{
+					CA: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: hubAmRouterCASecretName + "-legacy-hash",
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "Not managed by host only",
+			amc: cmomanifests.AdditionalAlertmanagerConfig{
+				StaticConfigs: []string{"alertmanager-host.com"},
+			},
+			expected: false,
+		},
+		{
+			name: "Not managed by legacy prefix only",
+			amc: cmomanifests.AdditionalAlertmanagerConfig{
+				TLSConfig: cmomanifests.TLSConfig{
+					CA: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: hubAmRouterCASecretName + "-legacy-hash",
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "Not managed",
+			amc: cmomanifests.AdditionalAlertmanagerConfig{
+				StaticConfigs: []string{"other-host.com"},
+				TLSConfig: cmomanifests.TLSConfig{
+					CA: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: "other-secret",
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, isManaged(tt.amc, hubInfo))
+		})
+	}
+}

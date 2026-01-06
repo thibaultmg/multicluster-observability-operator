@@ -8,7 +8,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"reflect"
+	"slices"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/api/equality"
 
@@ -92,10 +95,24 @@ func RevertHubClusterMonitoringConfig(ctx context.Context, client client.Client)
 
 	// check if alertmanagerConfigs exists
 	if foundClusterMonitoringConfiguration.PrometheusK8sConfig.AlertmanagerConfigs != nil {
+		host := ""
+		if hubInfo.AlertmanagerEndpoint != "" {
+			if u, err := url.Parse(hubInfo.AlertmanagerEndpoint); err == nil {
+				host = u.Host
+			}
+		}
+
 		copiedAlertmanagerConfigs := make([]cmomanifests.AdditionalAlertmanagerConfig, 0)
 		for _, v := range foundClusterMonitoringConfiguration.PrometheusK8sConfig.AlertmanagerConfigs {
-			if v.TLSConfig == (cmomanifests.TLSConfig{}) ||
-				(v.TLSConfig.CA != nil && v.TLSConfig.CA.LocalObjectReference.Name != hubAmRouterCASecretName+"-"+hubInfo.HubClusterDomain) {
+			matchSecret := v.TLSConfig != (cmomanifests.TLSConfig{}) && v.TLSConfig.CA != nil &&
+				strings.HasPrefix(v.TLSConfig.CA.LocalObjectReference.Name, hubAmRouterCASecretName)
+
+			match := matchSecret
+			if host != "" {
+				match = matchSecret && slices.Contains(v.StaticConfigs, host)
+			}
+
+			if !match {
 				copiedAlertmanagerConfigs = append(copiedAlertmanagerConfigs, v)
 			}
 		}
